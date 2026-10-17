@@ -65,4 +65,4 @@ class StructuredTests(unittest.TestCase):
             self.assertEqual(len(awards),2)
             self.assertIsNone(awards[0]['total_outlays_usd'])
             self.assertEqual(awards[1]['total_outlays_usd'],'0')
-            self.assertEqual(len([r for r in data if r['kind']=='api_snapshot']),2)
+            self.assertEqual(len([r for r in data if r['kind']=='api_snapshot']),3)

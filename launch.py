@@ -49,7 +49,7 @@ def main():
     except (OSError, sqlite3.Error, ValueError) as exc:
         print(f'Could not start: {exc}\nCheck folder write permission, disk space, and port availability.', file=sys.stderr)
         return 1
-    url = f'http://127.0.0.1:{server.server_port}/#review'
+    url = f'http://127.0.0.1:{server.server_port}/#start'
     print(f'Mode: {"PRACTICE (separate database)" if args.practice else "PERSONAL"}', flush=True)
     print(f'Data: {path}\nBackups: {ROOT / ".backups"}', flush=True)
     print(f'Open on THIS PC: {url}\nKeep this window open. Press Ctrl+C to stop.', flush=True)

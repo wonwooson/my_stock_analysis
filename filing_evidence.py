@@ -88,7 +88,7 @@ def collect_filing(path, filing_id, connect, append):
             if not re.fullmatch(r'https://www\.sec\.gov/Archives/edgar/data/1045810/\d{18}/[A-Za-z0-9_.-]+',url):
                 raise ValueError('검증된 SEC 엔비디아 원문만 허용합니다.')
             source_id='body-'+filing_id
-            prior=db.execute("SELECT payload FROM records WHERE kind='collection' AND entity_id IN (SELECT entity_id FROM records WHERE kind='collection') AND version=1 ORDER BY recorded_at DESC")
+            prior=db.execute("SELECT payload FROM records WHERE kind='collection' AND version=1 ORDER BY recorded_at DESC").fetchall()
             for r in prior:
                 old=json.loads(r['payload'])
                 if old['source_id']==source_id:
@@ -133,7 +133,7 @@ def collect_filing(path, filing_id, connect, append):
     with connect(path) as db:
         append(db,'collection',run_id,{**initial,'status':status,'http_status':code,'finished_at':clock(),
             'message':'본문 수신 또는 검증 실패. 근거를 생성하지 않았습니다.'},1)
-    return {'id':run_id,'status':status}
+    return {'id':run_id,'status':status,'http_status':code}
 
 
 def review_evidence(db,data,append):

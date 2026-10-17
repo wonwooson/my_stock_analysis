@@ -1,10 +1,11 @@
 """Official API adapters. Bounded discovery, not full historical coverage."""
+import copy
 import hashlib
 import json
 import re
 import ssl
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib import request, error
 from collection import NoRedirect, LOCK, clock
@@ -13,7 +14,7 @@ SOURCES = {
     'sec-nvda': {'name':'SEC · 엔비디아 최근 공시', 'url':'https://data.sec.gov/submissions/CIK0001045810.json',
                  'scope':'최근 목록 중 10-K·10-Q·8-K 및 정정 최대 10건. 과거 전체 이력과 본문은 미수집.'},
     'usa-micron': {'name':'USAspending · MICRON 지원 검색', 'url':'https://api.usaspending.gov/api/v2/search/spending_by_award/',
-                   'scope':'2024-01-01~2026-10-17, 미 상무부·수혜자 이름 MICRON, 보조금 유형, 첫 페이지 최대 10건. 전체 집계 아님.'},
+                   'scope':'2024-01-01~수집일(한국시간), 미 상무부·수혜자 이름 MICRON, 보조금 유형, 첫 페이지 최대 10건. 전체 집계 아님.'},
 }
 AWARD_QUERY = {'filters': {'award_type_codes':['02','03','04','05'], 'recipient_search_text':['MICRON'],
               'agencies':[{'type':'awarding','tier':'toptier','name':'Department of Commerce'}],
@@ -106,9 +107,15 @@ def normalize_awards(data):
                     'excluded_name_mismatch':excluded, 'scope':SOURCES['usa-micron']['scope'], 'messages':data.get('messages',[])}
 
 
-def request_data(source_id):
+def award_query():
+    query = copy.deepcopy(AWARD_QUERY)
+    query['filters']['time_period'][0]['end_date'] = datetime.now(timezone(timedelta(hours=9))).date().isoformat()
+    return query
+
+
+def request_data(source_id, query=None):
     source=SOURCES[source_id]
-    body=json.dumps(AWARD_QUERY).encode() if source_id=='usa-micron' else None
+    body=json.dumps(query if query is not None else award_query()).encode() if source_id=='usa-micron' else None
     req=request.Request(source['url'],data=body,headers={'User-Agent':'MarketResearchPrototype/0.1',
         'Accept':'application/json','Content-Type':'application/json','Accept-Encoding':'identity'})
     with request.build_opener(NoRedirect()).open(req,timeout=15) as response:
@@ -132,14 +139,17 @@ def run_data_collection(path, source_id, connect, append):
             run_id=str(uuid.uuid4())
             initial={'demo':False,'source_id':source_id,'publisher':source['name'],'source_url':source['url'],
                      'status':'running','started_at':clock(),'message':'공식 API 요청 시작','http_status':None,
-                     'query':AWARD_QUERY if source_id=='usa-micron' else None,'scope':source['scope']}
+                     'query':award_query() if source_id=='usa-micron' else None,'scope':source['scope']}
             append(db,'collection',run_id,initial,0)
     try:
-        data,digest=request_data(source_id)
+        data,digest=request_data(source_id, initial['query'])
         items,coverage=(normalize_sec(data) if source_id=='sec-nvda' else normalize_awards(data))
         with connect(path) as db:
             db.execute('BEGIN IMMEDIATE')
-            snapshot_id=source_id+'-'+digest
+            query_digest = hashlib.sha256(json.dumps(initial['query'],sort_keys=True).encode()).hexdigest()
+            snapshot_id=source_id+'-'+digest+'-'+query_digest
+            if initial['query']:
+                coverage['query_period'] = initial['query']['filters']['time_period'][0]
             if not db.execute("SELECT 1 FROM records WHERE kind='api_snapshot' AND entity_id=?",(snapshot_id,)).fetchone():
                 append(db,'api_snapshot',snapshot_id,{'demo':False,'source_id':source_id,'source_url':source['url'],
                        'collected_at':clock(),'sha256':digest,'data':data,'query':initial['query'],'coverage':coverage},0)
@@ -171,4 +181,4 @@ def run_data_collection(path, source_id, connect, append):
         status='network_error';message='네트워크 연결 실패 또는 시간 초과.';code=None
     with connect(path) as db:
         append(db,'collection',run_id,{**initial,'status':status,'message':message,'http_status':code,'finished_at':clock()},1)
-    return {'id':run_id,'status':status}
+    return {'id':run_id,'status':status,'http_status':code}

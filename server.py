@@ -7,6 +7,8 @@ import os
 import sqlite3
 import uuid
 from policy_records import write_policy
+from refresh_service import RefreshService
+from readiness import readiness
 from relation_records import write_relation
 from collection import CATALOG, run_collection
 from structured_data import SOURCES, run_data_collection
@@ -113,6 +115,7 @@ def text_field(data, key, limit=5000):
 
 def create_server(path, port=0, usage_mode='personal'):
     init_db(path)
+    refresh = RefreshService(path, connect, append)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -135,6 +138,11 @@ def create_server(path, port=0, usage_mode='personal'):
             if route in ('/api/state', '/api/export'):
                 with connect(path) as db:
                     return self.send(200, {'schema_version': 1, 'usage_mode': usage_mode, 'records': rows(db)})
+            if route == '/api/refresh':
+                return self.send(200, refresh.status())
+            if route == '/api/readiness':
+                with connect(path) as db:
+                    return self.send(200, readiness(rows(db), usage_mode))
             if route == '/api/workbench':
                 with connect(path) as db:
                     return self.send(200, build_workbench(rows(db)))
@@ -178,6 +186,12 @@ def create_server(path, port=0, usage_mode='personal'):
                 if not isinstance(data, dict):
                     raise ValueError('객체가 필요합니다.')
                 route = urlsplit(self.path).path
+                if route == '/api/refresh':
+                    if type(data.get('retry', False)) is not bool:
+                        raise ValueError('재시도 여부가 잘못됐습니다.')
+                    return self.send(202, refresh.start(retry=data.get('retry', False)))
+                if route == '/api/refresh-settings':
+                    return self.send(200, refresh.configure(data))
                 if route == '/api/collect-filing':
                     return self.send(200, collect_filing(path, data.get('filing_id'), connect, append))
                 if route == '/api/collect-data':
@@ -238,7 +252,15 @@ def create_server(path, port=0, usage_mode='personal'):
             except sqlite3.Error:
                 self.send(500, {'error': '저장하지 못했습니다. 다시 시도하세요.'})
 
-    return ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    class ResearchServer(ThreadingHTTPServer):
+        def server_close(self):
+            refresh.close()
+            super().server_close()
+
+    server = ResearchServer(('127.0.0.1', port), Handler)
+    server.refresh = refresh
+    refresh.start_scheduler()
+    return server
 
 
 if __name__ == '__main__':
