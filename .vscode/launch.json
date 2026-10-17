@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Research: practice (backup before start)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/launch.py",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["--practice"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {"PYTHONUTF8": "1"},
+      "justMyCode": true
+    }
+  ]
+}

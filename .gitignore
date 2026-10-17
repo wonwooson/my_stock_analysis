@@ -1,0 +1,13 @@
+.data/
+.backups/
+.tools/
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.sqlite3*
+*.log
+*.zip
+test-results/
